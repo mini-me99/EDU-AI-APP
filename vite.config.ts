@@ -22,5 +22,5 @@ export default defineConfig({
       'react-toastify'
     ]
   },
-  base: '/EDU-APP/',
+  base: '/EDU_AI/',
 })

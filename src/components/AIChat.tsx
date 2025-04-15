@@ -2,19 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Typography, Paper, TextField, Button, List, ListItem, ListItemText, CircularProgress, Alert } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import { motion, AnimatePresence } from 'framer-motion';
-import OpenAI from 'openai';
 import { format } from 'date-fns';
-
-// Add type declarations for Chatbase
-declare global {
-  interface Window {
-    chatbase: {
-      (command: string, ...args: any[]): void;
-      q?: any[];
-      getState: () => string;
-    };
-  }
-}
 
 interface Message {
   id: string;
@@ -22,12 +10,6 @@ interface Message {
   sender: 'user' | 'ai';
   timestamp: string;
 }
-
-// Initialize OpenAI client with direct API key
-const openai = new OpenAI({
-  apiKey: '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',
-  dangerouslyAllowBrowser: true
-});
 
 function AIChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -46,47 +28,11 @@ function AIChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Save messages to localStorage
   useEffect(() => {
     localStorage.setItem('chatMessages', JSON.stringify(messages));
   }, [messages]);
 
-  useEffect(() => {
-    // Initialize Chatbase widget
-    if (!window.chatbase || window.chatbase.getState() !== "initialized") {
-      window.chatbase = ((command: string, ...args: any[]) => {
-        if (!window.chatbase.q) {
-          window.chatbase.q = [];
-        }
-        window.chatbase.q.push([command, ...args]);
-      }) as any;
-      
-      window.chatbase = new Proxy(window.chatbase, {
-        get(target, prop: string) {
-          if (prop === "q") {
-            return target.q;
-          }
-          return (...args: any[]) => target(prop, ...args);
-        }
-      }) as any;
-
-      const onLoad = () => {
-        const script = document.createElement("script");
-        script.src = "https://www.chatbase.co/embed.min.js";
-        script.id = "N-o0DfBuKb50DkKlFzGLv";
-        (script as any).domain = "www.chatbase.co";
-        document.body.appendChild(script);
-      };
-
-      if (document.readyState === "complete") {
-        onLoad();
-      } else {
-        window.addEventListener("load", onLoad);
-      }
-    }
-  }, []);
-
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!input.trim()) return;
 
     const userMessage: Message = {
@@ -101,26 +47,39 @@ function AIChat() {
     setIsLoading(true);
     setError(null);
 
-    // Send message to Chatbase
-    if (window.chatbase) {
-      window.chatbase("sendMessage", {
-        message: input.trim(),
-        onResponse: (response: any) => {
-          const aiMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            text: response.text,
-            sender: 'ai',
-            timestamp: new Date().toISOString(),
-          };
-          setMessages(prev => [...prev, aiMessage]);
-          setIsLoading(false);
+    try {
+      const response = await fetch('https://www.chatbase.co/api/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_CHATBASE_API_KEY}`,
         },
-        onError: (error: any) => {
-          console.error('Chatbase error:', error);
-          setError('Failed to get AI response. Please try again.');
-          setIsLoading(false);
-        }
+        body: JSON.stringify({
+          messages: [
+            { role: "user", content: input.trim() }
+          ],
+          stream: false
+        }),
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from Chatbase');
+      }
+
+      const data = await response.json();
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: data.message || 'Sorry, I could not process your request.',
+        sender: 'ai',
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (err) {
+      console.error('Error getting AI response:', err);
+      setError('Failed to get AI response. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -173,7 +132,7 @@ function AIChat() {
                 >
                   <ListItemText
                     primary={message.text}
-                    secondary={new Date(message.timestamp).toLocaleTimeString()}
+                    secondary={format(new Date(message.timestamp), 'HH:mm')}
                     secondaryTypographyProps={{
                       color: message.sender === 'user' ? 'white' : 'text.secondary',
                       fontSize: '0.75rem'
