@@ -22,5 +22,5 @@ export default defineConfig({
       'react-toastify'
     ]
   },
-  base: '/EDU_AI/',
+  base: process.env.VITE_BASE_URL || '/EDU_AI/',
 })
